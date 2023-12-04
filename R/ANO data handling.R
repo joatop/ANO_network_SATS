@@ -1,5 +1,5 @@
 library(sf)
-library(raster)
+library(terra)
 library(stars)
 library(tmap)
 library(tidyverse)
@@ -20,7 +20,8 @@ ANO.sp <- st_read("P:/823001_18_metodesats_analyse_23_26_roos/ANO data/Naturover
 ANO.geo <- st_read("P:/823001_18_metodesats_analyse_23_26_roos/ANO data/Naturovervaking_eksport.gdb",
                    layer="ANO_SurveyPoint")
 
-#### upload mountain map ####
+#### upload vegetation zone map ####
+veg_zones <- rast("P:/823001_18_metodesats_analyse_23_26_roos/Naturindeks_N50_vegetasjonssoner_25m.tif")
 
 
 #### data handling - ANO data ####
@@ -160,19 +161,29 @@ ANO.dat <- merge(x=ANO.sp[,c("ParentGlobalID","Species","art_dekning")],
                              "hovedoekosystem_punkt","hovedtype_rute","kartleggingsenhet_1m2",
                              "groeftingsintensitet","bruksintensitet","beitetrykk","slatteintensitet",
                              "tungekjoretoy","slitasje",
-                             "vedplanter_total_dekning","busker_dekning","tresjikt_dekning","roesslyng_dekning",
-                             "SHAPE")],
+                             "vedplanter_total_dekning","busker_dekning","tresjikt_dekning","roesslyng_dekning")],
                 by.x="ParentGlobalID", by.y="GlobalID", all.x=T)
 names(ANO.dat)
 # remove communities which did not match an ANO point (should not happen, but does)
 dim(ANO.dat[is.na(ANO.dat$ano_punkt_id),])
 ANO.dat <- ANO.dat[!is.na(ANO.dat$ano_punkt_id),]
 
-# making it into a wider format
-ANO.dat <- ANO.dat %>% 
-  pivot_wider(names_from=Species,values_from=art_dekning)
-names(ANO.dat)
-
-
 ## adding geometry
 ANO.dat <- st_as_sf(ANO.dat,coords=c('lat','long'),crs=ANO.geo.crs, remove=F)
+
+#### ANO data for mountain ecosystems ####
+terra::plot(veg_zones)
+## adding vegetation zone info to ANO data
+# change ANO-crs (vector) to veg-zone crs (raster)
+ANO.dat <- ANO.dat %>% st_transform(crs = st_crs(veg_zones))
+# extract veg-zone info for ANO points and merge with ANO.dat
+ANO_veg_zones <- terra::extract(veg_zones, vect(ANO.dat))
+ANO.dat <- cbind(ANO.dat, ANO_veg_zones[,2])
+rm(ANO_veg_zones)
+colnames(ANO.dat)[23] <- "veg_zone"
+# filter out all veg-zones that are not alpine
+ANO.fjell <- ANO.dat %>% filter(veg_zone>=2)
+
+
+
+
